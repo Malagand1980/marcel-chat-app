@@ -19,11 +19,13 @@ header button{background:none;border:1px solid #fff6;color:#fff;border-radius:6p
 .msg.ich{background:#005c4b;align-self:flex-end}
 .msg .txt{white-space:pre-wrap;padding:2px 4px}
 .msg img{display:block;max-width:100%;max-height:320px;border-radius:8px;cursor:pointer}
+.msg audio{display:block;width:240px;max-width:100%;height:40px}
 .zeit{font-size:11px;opacity:.6;text-align:right;margin-top:2px;padding:0 4px}
-form{display:flex;align-items:center;gap:8px;padding:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));background:#202c33}
-textarea{flex:1;resize:none;border:none;border-radius:20px;padding:10px 14px;background:#2a3942;color:#e9edef;font:inherit;max-height:120px}
+form{display:flex;align-items:center;gap:6px;padding:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));background:#202c33}
+textarea{flex:1;min-width:0;resize:none;border:none;border-radius:20px;padding:10px 14px;background:#2a3942;color:#e9edef;font:inherit;max-height:120px}
 form button,.kamera{border:none;border-radius:50%;width:44px;height:44px;background:#00a884;color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer}
-.kamera{background:#2a3942;font-size:20px}
+.kamera,#mikro{background:#2a3942;font-size:20px}
+#mikro.an{background:#d33;font-size:13px;font-weight:bold}
 form button:disabled{opacity:.5}
 #login{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center}
 #login button{background:#00a884;color:#fff;border:none;border-radius:8px;padding:12px 20px;font-size:16px}
@@ -44,6 +46,7 @@ form button:disabled{opacity:.5}
   <div id="liste" hidden></div>
   <form id="formular" hidden>
     <label class="kamera" aria-label="Bild senden">📷<input type="file" id="datei" accept="image/*" hidden></label>
+    <button type="button" id="mikro" aria-label="Sprachnachricht">🎤</button>
     <textarea id="eingabe" rows="1" placeholder="Nachricht"></textarea>
     <button type="submit" id="senden" aria-label="Senden">➤</button>
   </form>
@@ -81,6 +84,8 @@ $("anmelden").onclick = async () => {
 $("abmelden").onclick = () => signOut(auth);
 $("vollbild").onclick = () => { $("vollbild").hidden = true; $("gross").src = ""; };
 
+const mmss = s => Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+
 onAuthStateChanged(auth, user => {
   const drin = !!user;
   $("login").hidden = drin;
@@ -107,6 +112,13 @@ onAuthStateChanged(auth, user => {
         img.onclick = () => { $("gross").src = m.bild; $("vollbild").hidden = false; };
         div.appendChild(img);
       }
+      if (m.audio) {
+        const a = document.createElement("audio");
+        a.controls = true;
+        a.preload = "metadata";
+        a.src = m.audio;
+        div.appendChild(a);
+      }
       if (m.text) {
         const t = document.createElement("div");
         t.className = "txt";
@@ -116,7 +128,8 @@ onAuthStateChanged(auth, user => {
       const z = document.createElement("div");
       z.className = "zeit";
       const t = m.zeit ? m.zeit.toDate() : new Date();
-      z.textContent = (ich ? "" : (m.name || "") + " · ") +
+      z.textContent = (m.audio ? "🎤 " + mmss(m.dauer || 0) + " · " : "") +
+        (ich ? "" : (m.name || "") + " · ") +
         t.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
       div.appendChild(z);
       liste.appendChild(div);
@@ -147,6 +160,7 @@ $("formular").onsubmit = async ev => {
   catch (e) { alert("Senden fehlgeschlagen: " + e.code); $("eingabe").value = text; }
 };
 
+/* ---------- Bilder ---------- */
 async function verkleinern(datei) {
   const bmp = await createImageBitmap(datei, { imageOrientation: "from-image" });
   const f = Math.min(1, 1280 / Math.max(bmp.width, bmp.height));
@@ -174,6 +188,67 @@ $("datei").onchange = async () => {
   } finally {
     $("senden").disabled = false;
   }
+};
+
+/* ---------- Sprachnachrichten ---------- */
+const MAX_SEK = 120;
+let rec = null, timer = null, start = 0;
+
+const alsDataUrl = blob => new Promise((ok, err) => {
+  const r = new FileReader();
+  r.onload = () => ok(r.result);
+  r.onerror = err;
+  r.readAsDataURL(blob);
+});
+
+function stoppen() {
+  if (rec && rec.state === "recording") rec.stop();
+}
+
+$("mikro").onclick = async () => {
+  if (rec) { stoppen(); return; }
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    alert("Kein Zugriff aufs Mikrofon. Bitte in den Einstellungen erlauben.");
+    return;
+  }
+  const typ = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm"].find(t => MediaRecorder.isTypeSupported(t));
+  const opts = { audioBitsPerSecond: 24000 };
+  if (typ) opts.mimeType = typ;
+  const r = new MediaRecorder(stream, opts);
+  const stuecke = [];
+  r.ondataavailable = e => { if (e.data.size) stuecke.push(e.data); };
+  r.onstop = async () => {
+    clearInterval(timer);
+    stream.getTracks().forEach(t => t.stop());
+    $("mikro").classList.remove("an");
+    $("mikro").textContent = "🎤";
+    const dauer = Math.round((Date.now() - start) / 1000);
+    rec = null;
+    if (dauer < 1) return;
+    $("mikro").disabled = true;
+    try {
+      const audio = await alsDataUrl(new Blob(stuecke, { type: r.mimeType }));
+      if (audio.length > 950000) { alert("Die Sprachnachricht ist zu lang."); return; }
+      await senden({ audio, dauer });
+    } catch (e) {
+      alert("Sprachnachricht fehlgeschlagen: " + (e.code || e.message));
+    } finally {
+      $("mikro").disabled = false;
+    }
+  };
+  rec = r;
+  r.start();
+  start = Date.now();
+  $("mikro").classList.add("an");
+  $("mikro").textContent = "0:00";
+  timer = setInterval(() => {
+    const s = Math.floor((Date.now() - start) / 1000);
+    $("mikro").textContent = mmss(s);
+    if (s >= MAX_SEK) stoppen();
+  }, 250);
 };
 
 $("eingabe").addEventListener("keydown", e => {

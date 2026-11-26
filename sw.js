@@ -1,4 +1,4 @@
-const VERSION = "chat-v1";
+const VERSION = "chat-v2";
 const DATEIEN = ["./", "index.html", "manifest.webmanifest", "icon.svg"];
 
 self.addEventListener("install", e => {

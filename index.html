@@ -15,12 +15,13 @@ header{background:#075e54;padding:12px 16px;display:flex;align-items:center;just
 header h1{font-size:18px;margin:0}
 header button{background:none;border:1px solid #fff6;color:#fff;border-radius:6px;padding:6px 10px}
 #liste{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:6px}
-.msg{max-width:80%;padding:6px;border-radius:10px;background:#202c33;align-self:flex-start;overflow-wrap:anywhere}
+.msg{max-width:80%;padding:6px;border-radius:10px;background:#202c33;align-self:flex-start;overflow-wrap:anywhere;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .msg.ich{background:#005c4b;align-self:flex-end}
 .msg .txt{white-space:pre-wrap;padding:2px 4px}
-.msg img{display:block;max-width:100%;max-height:320px;border-radius:8px;cursor:pointer}
+.msg img{display:block;max-width:100%;max-height:320px;border-radius:8px;cursor:pointer;-webkit-touch-callout:none}
 .msg audio{display:block;width:240px;max-width:100%;height:40px}
 .zeit{font-size:11px;opacity:.6;text-align:right;margin-top:2px;padding:0 4px}
+.geloescht{font-size:11px;color:#ff8a8a;text-align:right;padding:0 4px;margin-top:2px}
 form{display:flex;align-items:center;gap:5px;padding:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));background:#202c33}
 textarea{flex:1;min-width:0;resize:none;border:none;border-radius:20px;padding:10px 12px;background:#2a3942;color:#e9edef;font:inherit;max-height:120px}
 form button,.kamera{border:none;border-radius:50%;width:42px;height:42px;background:#00a884;color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer}
@@ -56,7 +57,7 @@ form button:disabled{opacity:.5}
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
-import { getFirestore, collection, addDoc, serverTimestamp, query, orderBy, limitToLast, onSnapshot } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, arrayUnion, serverTimestamp, query, orderBy, limitToLast, onSnapshot } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDFE-SqsgZw-M2iSsblBhHTlJaca_RLi_8",
@@ -73,6 +74,8 @@ const db = getFirestore(app);
 const $ = id => document.getElementById(id);
 let abo = null;
 
+const vorname = u => (u.displayName || "").split(" ")[0] || "Jemand";
+
 $("anmelden").onclick = async () => {
   $("fehler").textContent = "";
   const provider = new GoogleAuthProvider();
@@ -86,6 +89,26 @@ $("abmelden").onclick = () => signOut(auth);
 $("vollbild").onclick = () => { $("vollbild").hidden = true; $("gross").src = ""; };
 
 const mmss = s => Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+
+/* Nachricht nur für mich löschen.
+   Der andere sieht sie weiter, mit dem Hinweis, dass ich sie gelöscht habe.
+   Hat der andere sie auch schon gelöscht, wird sie ganz entfernt. */
+async function fuerMichLoeschen(id, versteckt) {
+  if (!confirm("Nachricht für dich löschen?\nDer andere sieht sie weiterhin und bekommt angezeigt, dass du sie gelöscht hast.")) return;
+  const u = auth.currentUser;
+  try {
+    if (versteckt.some(x => x !== u.uid)) {
+      await deleteDoc(doc(db, "nachrichten", id));
+    } else {
+      await updateDoc(doc(db, "nachrichten", id), {
+        versteckt: arrayUnion(u.uid),
+        geloeschtVon: arrayUnion(vorname(u))
+      });
+    }
+  } catch (e) {
+    alert("Löschen fehlgeschlagen: " + e.code);
+  }
+}
 
 onAuthStateChanged(auth, user => {
   const drin = !!user;
@@ -103,9 +126,15 @@ onAuthStateChanged(auth, user => {
     const nachUnten = () => { liste.scrollTop = liste.scrollHeight; };
     snap.forEach(d => {
       const m = d.data({ serverTimestamps: "estimate" });
+      const versteckt = m.versteckt || [];
+      if (versteckt.includes(user.uid)) return;
       const ich = m.uid === user.uid;
       const div = document.createElement("div");
       div.className = "msg" + (ich ? " ich" : "");
+      div.addEventListener("contextmenu", e => {
+        e.preventDefault();
+        fuerMichLoeschen(d.id, versteckt);
+      });
       if (m.bild) {
         const img = document.createElement("img");
         img.src = m.bild;
@@ -133,6 +162,13 @@ onAuthStateChanged(auth, user => {
         (ich ? "" : (m.name || "") + " · ") +
         t.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
       div.appendChild(z);
+      if (versteckt.length) {
+        const g = document.createElement("div");
+        g.className = "geloescht";
+        const namen = m.geloeschtVon || [];
+        g.textContent = "🗑️ " + (namen.length ? namen.join(", ") : "Der andere") + " hat das bei sich gelöscht";
+        div.appendChild(g);
+      }
       liste.appendChild(div);
     });
     nachUnten();
@@ -148,7 +184,7 @@ onAuthStateChanged(auth, user => {
 async function senden(daten) {
   const u = auth.currentUser;
   await addDoc(collection(db, "nachrichten"), {
-    ...daten, uid: u.uid, name: (u.displayName || "").split(" ")[0], zeit: serverTimestamp()
+    ...daten, uid: u.uid, name: vorname(u), zeit: serverTimestamp()
   });
 }
 

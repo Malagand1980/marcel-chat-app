@@ -14,8 +14,9 @@ html,body{margin:0;height:100%;font-family:system-ui,sans-serif;background:#0b14
 header{background:#075e54;padding:12px 16px;display:flex;align-items:center;justify-content:space-between}
 header h1{font-size:18px;margin:0}
 header button{background:none;border:1px solid #fff6;color:#fff;border-radius:6px;padding:6px 10px}
-#liste{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:6px}
-.msg{max-width:80%;padding:6px;border-radius:10px;background:#202c33;align-self:flex-start;overflow-wrap:anywhere;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+header .knoepfe{display:flex;gap:8px}
+#liste{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:6px;background:#0b141a;background-position:center;background-repeat:repeat}
+.msg{max-width:80%;padding:6px;border-radius:10px;background:#202c33;box-shadow:0 1px 2px #0007;align-self:flex-start;overflow-wrap:anywhere;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .msg.ich{background:#005c4b;align-self:flex-end}
 .msg .txt{white-space:pre-wrap;padding:2px 4px}
 .msg img{display:block;max-width:100%;max-height:320px;border-radius:8px;cursor:pointer;-webkit-touch-callout:none}
@@ -33,12 +34,25 @@ form button:disabled{opacity:.5}
 .hinweis{color:#f7a;font-size:14px}
 #vollbild{position:fixed;inset:0;background:#000e;display:flex;align-items:center;justify-content:center;z-index:10}
 #vollbild img{max-width:100%;max-height:100%}
+#hgFenster{position:fixed;inset:0;background:#000a;display:flex;align-items:flex-end;justify-content:center;z-index:20}
+#hgFenster .blatt{background:#1f2c34;width:100%;max-width:520px;max-height:85dvh;overflow-y:auto;border-radius:16px 16px 0 0;padding:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom))}
+#hgFenster h2{font-size:17px;margin:0 0 12px;display:flex;justify-content:space-between;align-items:center}
+#hgFenster h2 button{background:none;border:none;color:#e9edef;font-size:22px;cursor:pointer}
+#hgMuster{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:10px}
+.hgKachel{border:2px solid transparent;border-radius:10px;padding:0;background:none;color:#e9edef;cursor:pointer;font:inherit;font-size:12px}
+.hgKachel .vorschau{display:block;height:110px;border-radius:8px;background-position:center}
+.hgKachel span.name{display:block;padding:4px 0}
+.hgKachel.aktiv{border-color:#00a884}
+.hgEigen{display:flex;flex-direction:column;gap:10px;margin-top:16px}
+.hgEigen label.knopf{background:#00a884;color:#fff;border-radius:8px;padding:12px;text-align:center;cursor:pointer}
+.hgEigen input[type=range]{width:100%}
+.hgEigen small{opacity:.7}
 [hidden]{display:none!important}
 </style>
 </head>
 <body>
 <div id="app">
-  <header><h1>Marcel Chat</h1><button id="abmelden" hidden>Abmelden</button></header>
+  <header><h1>Marcel Chat</h1><div class="knoepfe"><button id="hgKnopf" aria-label="Hintergrund ändern" title="Hintergrund ändern">🎨</button><button id="abmelden" hidden>Abmelden</button></div></header>
   <div id="login">
     <p>Bitte mit deinem Google-Konto anmelden.</p>
     <button id="anmelden">Mit Google anmelden</button>
@@ -54,6 +68,20 @@ form button:disabled{opacity:.5}
   </form>
 </div>
 <div id="vollbild" hidden><img id="gross" alt=""></div>
+<div id="hgFenster" hidden>
+  <div class="blatt">
+    <h2>Chat-Hintergrund <button type="button" id="hgZu" aria-label="Schließen">✕</button></h2>
+    <div id="hgMuster"></div>
+    <div class="hgEigen">
+      <label class="knopf">🖼️ Eigenes Bild als Hintergrund wählen<input type="file" id="hgDatei" accept="image/*" hidden></label>
+      <div id="hgDunkelBox" hidden>
+        <label for="hgDunkel">Bild abdunkeln (damit die Nachrichten gut lesbar bleiben)</label>
+        <input type="range" id="hgDunkel" min="0" max="80" step="5">
+      </div>
+      <small>Die Auswahl wird auf diesem Gerät gespeichert.</small>
+    </div>
+  </div>
+</div>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
@@ -296,6 +324,106 @@ $("eingabe").addEventListener("keydown", e => {
     $("formular").requestSubmit();
   }
 });
+
+/* ---------- Chat-Hintergrund ---------- */
+const svg = s => `url("data:image/svg+xml,${encodeURIComponent(s)}")`;
+const MUSTER = [
+  { id: "standard", name: "Standard", bg: "#0b141a" },
+  { id: "punkte", name: "Punkte", bg: `${svg('<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22"><circle cx="11" cy="11" r="1.4" fill="#ffffff" fill-opacity=".09"/></svg>')} #0f1f24` },
+  { id: "wellen", name: "Wellen", bg: `${svg('<svg xmlns="http://www.w3.org/2000/svg" width="60" height="24"><path d="M0 12 Q15 2 30 12 T60 12" fill="none" stroke="#8fd3ff" stroke-opacity=".10" stroke-width="2"/></svg>')} #0f2230` },
+  { id: "rauten", name: "Rauten", bg: `${svg('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><path d="M20 2 L38 20 L20 38 L2 20 Z" fill="none" stroke="#ffffff" stroke-opacity=".07" stroke-width="1.5"/></svg>')} #161e2b` },
+  { id: "kreise", name: "Waldkreise", bg: `${svg('<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56"><g fill="none" stroke="#9fe0b0" stroke-opacity=".09" stroke-width="1.5"><circle cx="28" cy="28" r="20"/><circle cx="0" cy="0" r="20"/><circle cx="56" cy="0" r="20"/><circle cx="0" cy="56" r="20"/><circle cx="56" cy="56" r="20"/></g></svg>')} #102419` },
+  { id: "sterne", name: "Sternenhimmel", bg: `${svg('<svg xmlns="http://www.w3.org/2000/svg" width="140" height="140"><g fill="#ffffff"><circle cx="12" cy="18" r="1" fill-opacity=".5"/><circle cx="70" cy="9" r=".8" fill-opacity=".35"/><circle cx="118" cy="40" r="1.2" fill-opacity=".45"/><circle cx="40" cy="62" r=".7" fill-opacity=".3"/><circle cx="95" cy="88" r="1" fill-opacity=".4"/><circle cx="22" cy="110" r="1.1" fill-opacity=".35"/><circle cx="130" cy="125" r=".7" fill-opacity=".3"/><circle cx="62" cy="128" r=".9" fill-opacity=".4"/></g></svg>')}, linear-gradient(170deg, #0b1026, #1c1640)` },
+  { id: "abend", name: "Abendrot", bg: "linear-gradient(165deg, #1d2b4a, #3a2350 55%, #4a2a3a)" },
+  { id: "meer", name: "Tiefsee", bg: `${svg('<svg xmlns="http://www.w3.org/2000/svg" width="90" height="30"><path d="M0 15 Q22 5 45 15 T90 15" fill="none" stroke="#ffffff" stroke-opacity=".06" stroke-width="2"/></svg>')}, linear-gradient(180deg, #0e3a4a, #0a1a28)` },
+  { id: "sand", name: "Sand (hell)", bg: `${svg('<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><circle cx="6" cy="7" r="1.2" fill="#7a6a4a" fill-opacity=".18"/><circle cx="19" cy="18" r="1" fill="#7a6a4a" fill-opacity=".14"/></svg>')} #e6dcc6` }
+];
+const HG_KEY = "chatHintergrund", HG_BILD_KEY = "chatHintergrundBild";
+const lesen = k => { try { return localStorage.getItem(k); } catch { return null; } };
+const schreiben = (k, v) => { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); return true; } catch { return false; } };
+
+function hgEinstellung() {
+  try { return JSON.parse(lesen(HG_KEY)) || { muster: "standard" }; } catch { return { muster: "standard" }; }
+}
+
+function hgAnwenden() {
+  const e = hgEinstellung();
+  const liste = $("liste");
+  const bild = e.muster === "eigen" ? lesen(HG_BILD_KEY) : null;
+  if (bild) {
+    const d = (e.dunkel ?? 40) / 100;
+    liste.style.background = `linear-gradient(rgba(0,0,0,${d}), rgba(0,0,0,${d})), url("${bild}") center / cover no-repeat, #0b141a`;
+  } else {
+    const m = MUSTER.find(x => x.id === e.muster) || MUSTER[0];
+    liste.style.background = m.bg;
+  }
+  document.querySelectorAll(".hgKachel").forEach(k => k.classList.toggle("aktiv", k.dataset.id === (bild ? "eigen" : e.muster)));
+  $("hgDunkelBox").hidden = !bild;
+  $("hgDunkel").value = e.dunkel ?? 40;
+}
+
+function hgKachelnBauen() {
+  const box = $("hgMuster");
+  box.innerHTML = "";
+  const kacheln = MUSTER.map(m => ({ id: m.id, name: m.name, bg: m.bg }));
+  const bild = lesen(HG_BILD_KEY);
+  if (bild) kacheln.push({ id: "eigen", name: "Eigenes Bild", bg: `url("${bild}") center / cover no-repeat` });
+  for (const m of kacheln) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "hgKachel";
+    b.dataset.id = m.id;
+    const v = document.createElement("span");
+    v.className = "vorschau";
+    v.style.background = m.bg;
+    const n = document.createElement("span");
+    n.className = "name";
+    n.textContent = m.name;
+    b.append(v, n);
+    b.onclick = () => {
+      const e = hgEinstellung();
+      e.muster = m.id;
+      schreiben(HG_KEY, JSON.stringify(e));
+      hgAnwenden();
+    };
+    box.appendChild(b);
+  }
+}
+
+$("hgKnopf").onclick = () => { hgKachelnBauen(); hgAnwenden(); $("hgFenster").hidden = false; };
+$("hgZu").onclick = () => { $("hgFenster").hidden = true; };
+$("hgFenster").onclick = e => { if (e.target === $("hgFenster")) $("hgFenster").hidden = true; };
+$("hgDunkel").oninput = () => {
+  const e = hgEinstellung();
+  e.dunkel = Number($("hgDunkel").value);
+  schreiben(HG_KEY, JSON.stringify(e));
+  hgAnwenden();
+};
+$("hgDatei").onchange = async ev => {
+  const datei = ev.target.files[0];
+  ev.target.value = "";
+  if (!datei) return;
+  try {
+    const bmp = await createImageBitmap(datei, { imageOrientation: "from-image" });
+    const f = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * f);
+    c.height = Math.round(bmp.height * f);
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+    let qual = 0.8, url = c.toDataURL("image/jpeg", qual);
+    while (url.length > 1500000 && qual > 0.3) { qual -= 0.1; url = c.toDataURL("image/jpeg", qual); }
+    if (!schreiben(HG_BILD_KEY, url)) { alert("Das Bild ist zu groß zum Speichern. Bitte ein anderes wählen."); return; }
+    const e = hgEinstellung();
+    e.muster = "eigen";
+    if (e.dunkel == null) e.dunkel = 40;
+    schreiben(HG_KEY, JSON.stringify(e));
+    hgKachelnBauen();
+    hgAnwenden();
+  } catch (e) {
+    alert("Bild konnte nicht geladen werden: " + (e.message || e));
+  }
+};
+hgAnwenden();
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
 </script>
